@@ -284,7 +284,7 @@ To see more details run the code in the console (copy-paste), rather than in the
 
 ### U* distribution
 
-```{r u_star_sampling, eval=FALSE}
+```{r u_star_sampling}
 Spe$sEstimateUstarScenarios(nSample = 100L, probs = c(0.05, 0.5, 0.95))  # gets seasons to results
 # Spe$sGetEstimatedUstarThresholdDistribution()
 # Spe$sGetUstarScenarios()
