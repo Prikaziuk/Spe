@@ -87,6 +87,12 @@ We joined ``_full_output_`` files for 2019 and 2020 for you ``bind_rows(df2019, 
 #   saveRDS(params$flux_computed)
 
 df <- read_rds(params$flux_computed)
+
+## csv alternative
+# write_csv(df, sub('.rds', '.csv', params$flux_computed))
+
+# df <- read_csv(sub('.rds', '.csv', params$flux_computed))
+
 ```
 
 
@@ -179,20 +185,23 @@ rad_hh <- rad %>%
 
 ### alternative to save time
 
-Again I will use the precompiled version
+Again I will use the precomputed version
 
 ```{r read_rad_local}
 
 # saveRDS(rad_hh, params$rad_computed)
 
-# rad_hh <- read_csv('Spe_rad_hh.csv') %>%
-#     as_tsibble()
-
 rad_hh <- read_rds(params$rad_computed)
+
+## csv alternative
+# write_csv(rad_hh, sub('.rds', '.csv', params$rad_computed))
+
+# rad_hh <- read_csv(sub('.rds', '.csv', params$rad_computed)) %>%
+#     as_tsibble()
 ```
 
 
-### Plot
+#### half hourly (HH) radiation plot
 
 ```{r plot_rad}
 rad_hh %>%
@@ -203,10 +212,9 @@ rad_hh %>%
         facet_wrap(.~key, scales = 'free') + 
         theme_bw() + 
         labs(
-            title='Spe HH radiation 45m available on 2020-03-30'
+            title='Spe HH radiation 45m'
         ) + 
-        theme(text=element_text(size=20),
-              axis.text.x=element_text(angle=45, vjust=0.5))
+        theme(text=element_text(size=20))
 ```
 
 # REddyProc
@@ -268,7 +276,7 @@ Spe$sPlotFingerprintY('NEE', Year = params$year, onlyLegend = TRUE)
 ```
 
 
-## Working 5-10 mins
+## Working
 
 All the rest is done by REddyProc in 5-10 minutes.
 
@@ -284,9 +292,10 @@ Spe$sEstimateUstarScenarios(nSample = 100L, probs = c(0.05, 0.5, 0.95))  # gets 
 
 ### Gap filling
 
+This is the longest period
+
 ```{r gap_filling}
 Spe$sMDSGapFillUStarScens('NEE')  # adds NEE, Ustar
-# Spe$sPlotFingerprintY('NEE_U50_f', Year = params$year)
 
 Spe$sSetLocationInfo(LatDeg = 52.251185, LongDeg = 5.690051, TimeZoneHour = 0)  # 45 cols 
 Spe$sMDSGapFill('Tair', FillAll = FALSE,  minNWarnRunLength = NA)     # 54 cols
