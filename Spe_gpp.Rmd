@@ -41,14 +41,21 @@ required_packages <- c('knitr', 'REddyProc', 'tidyverse', 'versions', 'lubridate
 to_install <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
 if(length(to_install)) install.packages(to_install)
 
-versions::install.versions('tsibble', '0.8.3')
+if ('tsibble' %in% installed.packages()[,"Package"]) {
+  if (packageVersion("tsibble") != '0.8.3') {
+    warning('probably downgrading tsibble package')
+    versions::install.versions('tsibble', '0.8.3')
+  }
+} else {
+  versions::install.versions('tsibble', '0.8.3')
+}
 
 
 knitr::opts_chunk$set(echo=TRUE, include = TRUE, warning=FALSE, message=FALSE)
-library(REddyProc)  # install.packages('knitr')
-library(tidyverse) # install.packages('tidyverse')
-library(tsibble) # install.packages('tsibble')
-library(lubridate) # install.packages('lubridate')
+library(REddyProc) 
+library(tidyverse)
+library(tsibble)
+library(lubridate)
 ```
 
 
