@@ -1,0 +1,339 @@
+---
+title: "NL_Spe GPP"
+output:
+  html_notebook:
+    theme: united
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    
+params:
+  fluxes_path: 'W:\\Siteswrs\\Speuld\\data\\2_processed\\fluxes'
+  rad_path: 'W:\\Siteswrs\\Speuld\\data\\2_processed\\2019_radiation45.csv'
+---
+
+```{r setup, include = FALSE}
+
+install.packages('knitr')
+install.packages('REddyProc')
+install.packages('tidyverse')
+install.packages('tsibble')
+install.packages('lubridate')
+
+
+knitr::opts_chunk$set(echo=TRUE, include = TRUE, warning=FALSE, message=FALSE)
+library(REddyProc)  # install.packages('knitr')
+library(tidyverse) # install.packages('tidyverse')
+library(tsibble) # install.packages('tsibble')
+library(lubridate) # install.packages('lubridate')
+```
+
+
+# Fluxes
+
+## '_full_output_'
+
+This function takes ~3 minutes to run.
+It combines all .csv files that have ``_full_output_`` in them, drops duplicated lines and returns data_frame.
+
+```{r read_full_output, eval=FALSE}
+
+df <- c()
+for (f in list.files(params$fluxes_path)){
+    if (grepl('_full_output_', f)) {
+        print(f)
+        tmp <- read_csv(file.path(WRS_DIR, f), skip=1) %>%
+            slice(-1) %>%
+            mutate(
+                dtime = paste(date, time)  # very bad as relies on type_convert() but as.POSIXct() refuesed
+            ) %>%
+            select(dtime, everything()) %>%
+            type_convert() %>%
+            mutate_if(is.numeric, ~ifelse(.==-9999, NA, .))  # na=c('-9999') did not work
+        df <- bind_rows(df, tmp)
+        
+    }
+}
+
+df <- distinct(df)
+```
+
+### alternative to save time
+
+```{r read_full_output_local}
+df <- read_rds('20200330_Spe.rds') %>%
+    distinct()
+```
+
+
+## making tsibble
+
+``tsibble`` is a dataframe designed for time series, it knows how to:
+
+* fill missing timestamps ``fill_gaps()``
+    - very topical for us as we have to make evenly spaced dataframe
+    - fills all columns besides timestamp to NA
+* aggregated on various timestamps (half-hourly, daily) ``index_by() %>% summarize()``
+
+Here the code is not neat, because reporting was needed
+
+```{r tsibble_from_flux}
+
+# tsibble does not like repeated dates
+dup_i <- duplicated(df$dtime)
+print(sprintf('%d still duplicated and will be dropped', sum(dup_i)))
+print(df$dtime[dup_i])
+
+df_ts <- df[!dup_i,] %>%
+    as_tsibble(index=dtime)
+
+nrow_before = nrow(df_ts)
+df_ts <- fill_gaps(df_ts)
+
+filled <- nrow(df_ts) - nrow_before
+print(sprintf('%d HH steps (~%f DD) were filled with NaNs', filled, filled/48))
+```
+
+
+### DD
+
+Demonstration of aggregation to daily timestamp
+
+```{r dd}
+
+df_dd <- df_ts %>%
+    index_by(day = lubridate::floor_date(dtime, "day")) %>%  # round() and ceil() also exist
+    summarise_all(mean, na.rm=TRUE)
+
+df_dd %>%
+    ggplot(aes(x=day, y=co2_flux)) + 
+        geom_point(aes(color=as.factor(round(qc_co2_flux))))
+```
+
+# Radiation
+
+Takes very long, because it is 150MB through net
+
+```{r read_rad, eval=FALSE}
+
+rad <- read_csv(params$rad_path, col_names = c('ts', 'Rsi', 'Rso', 'Rli', 'Rlo')) %>%
+    mutate(
+        datetime = as.POSIXct((ts - 1) * (60*60*24), origin='2019-01-01', tz='UTC')
+    ) %>%
+    distinct()
+
+# size = nrow(rad)
+# rad = distinct(rad)
+# print(sprintf('dopped %d ts', size - nrow(rad)))
+
+```
+
+
+## Making HH
+
+```{r hh}
+rad_hh <- rad %>%
+    as_tsibble() %>%
+    index_by(dtime = lubridate::round_date(datetime, "30 mins")) %>%  # or floor()?
+    summarise_all(mean, na.rm=TRUE)
+```
+
+Again I will use precompiled version
+
+```{r read_rad_local}
+rad_hh <- read_csv('Spe_rad_hh.csv') %>%
+    as_tsibble()
+```
+
+
+### Plot
+
+```{r plot_rad}
+rad_hh %>%
+    select(-ts) %>%
+    gather() %>%
+    ggplot(aes(x=dtime, y=value)) + 
+        geom_point() + 
+        facet_wrap(.~key, scales = 'free') + 
+        theme_bw() + 
+        labs(
+            title='Spe HH radiation 45m available on 2020-03-30'
+        ) + 
+        theme(text=element_text(size=20))
+```
+
+# REddyProc
+
+## Joining for REddyProc
+
+```{r joining}
+df_joined <- df_ts %>% 
+    full_join(rad_hh, by=c('dtime')) %>%
+    fill_gaps()
+```
+
+
+## Praparing input for REddyProc
+
+It does not matter how you prepare it but the dataframe ``df_joined`` must have:
+
+1. First row - 00:30
+2. Last row - 0:00
+3. Monotonous evenly spaced no gaps in DateTime
+
+Invalid values are reported by warnings from REddyProc:
+1. NEE < -50 and NEE > 100
+2. Rg < 0
+3. VPD > 50
+
+```{r prepare_input}
+df_e <- df_joined %>%
+    select(DateTime=dtime, NEE=co2_flux, VPD, Tair=air_temperature, Ustar=`u*`, Rg=Rsi) %>%
+    filter(DateTime > as.Date('2019-01-01 00:00:30', tz='UTC'), 
+           DateTime <= as.Date('2020-01-01 00:00:00', tz='UTC')) %>% 
+    mutate(
+        Tair = Tair - 273.15,  # K -> C
+        VPD = VPD / 100,       # Pa -> hPa (mbar)
+        NEE = ifelse(NEE < -50, NA, NEE),
+        NEE = ifelse(NEE > 100, NA, NEE),
+        Rg = ifelse(Rg < 0, 0, Rg)
+    ) %>%
+    filterLongRuns("NEE")
+```
+
+## Initializing class
+
+```{r class}
+Spe <- sEddyProc$new('Spe', as.data.frame(df_e), c('NEE','Tair', 'Rg', 'VPD', 'Ustar'))
+```
+
+## Working 5-10 mins
+
+All the rest is done by EddyProc in 5-10 minutes
+
+```{r working, eval=FALSE}
+Spe$sEstimateUstarScenarios(nSample = 100L, probs = c(0.05, 0.5, 0.95))
+Spe$sGetEstimatedUstarThresholdDistribution()
+Spe$sGetUstarScenarios()
+
+Spe$sMDSGapFillUStarScens('NEE')
+# Spe$sPlotFingerprintY('NEE_U50_f', Year = 2019)
+
+Spe$sSetLocationInfo(LatDeg = 52.251185, LongDeg = 5.690051, TimeZoneHour = 0)  
+Spe$sMDSGapFill('Tair', FillAll = FALSE,  minNWarnRunLength = NA)     
+Spe$sMDSGapFill('VPD', FillAll = FALSE,  minNWarnRunLength = NA)  
+
+Spe$sMRFluxPartitionUStarScens()
+
+# Spe$sPlotFingerprintY('GPP_U50_f', Year = 2019)
+
+# saveRDS(Spe, '2019_Spe_REddyProc_class.rds')  # saving all class to avoid these calculations
+# Spe_filled <- Spe$sExportResults() %>% as_tibble()
+df_res <- bind_rows(df_e, Spe$sExportResults())
+```
+
+## Plots of results
+
+```{r}
+Spe <- readRDS('2019_Spe_REddyProc_class.rds')
+```
+
+
+### NEE
+
+```{r plot_nee, fig.width = 10, fig.height = 7}
+par(mfrow=1:2)
+Spe$sPlotFingerprintY('NEE', Year = 2019)
+Spe$sPlotFingerprintY('NEE', Year = 2019, onlyLegend = TRUE)
+```
+
+### NEE gap filled
+
+
+```{r plot_nee_f, fig.width = 10, fig.height = 7}
+par(mfrow=1:2)
+Spe$sPlotFingerprintY('NEE_U50_f', Year = 2019)
+Spe$sPlotFingerprintY('NEE_U50_f', Year = 2019, onlyLegend = TRUE)
+```
+
+### GPP
+
+
+```{r plot_gpp_f, fig.width = 10, fig.height = 7}
+par(mfrow=1:2)
+Spe$sPlotFingerprintY('GPP_U50_f', Year = 2019)
+Spe$sPlotFingerprintY('GPP_U50_f', Year = 2019, onlyLegend = TRUE)
+```
+
+
+## Results
+
+```{r}
+df_res <- read_csv('Spe_2019_MR_GPP.csv') %>%
+    as_tsibble()
+```
+
+### Daily GPP
+
+```{r plot_dd_gpp}
+ma_size = 8
+
+df_res %>%
+    index_by(day = lubridate::floor_date(DateTime, "day")) %>%
+    summarize(
+        NEE = mean(NEE, na.rm=TRUE),
+        GPP_U50_f = mean(GPP_U50_f, na.rm=TRUE)
+    ) %>%
+    mutate(
+      GPP_ma = slide_dbl(GPP_U50_f, mean, .size = ma_size),
+      GPP_ma = lead(GPP_ma, ma_size/2)  # align center did not work
+    ) %>%
+    ggplot(aes(x=day)) + 
+        # geom_line(aes(y=-NEE, color='-NEE')) +
+        geom_line(aes(y=GPP_U50_f), size=0.5) + 
+        geom_point(aes(y=GPP_U50_f)) + 
+        geom_line(aes(y=GPP_ma, color=sprintf('GPP_ma%dd', ma_size)), size=1.5) +
+        guides(color=guide_legend(title='color')) + 
+        scale_x_datetime(minor_breaks = "1 month") +
+        labs(
+            title = 'NL-Spe DD GPP',
+            x = '2019'
+        ) + 
+        theme_bw() + 
+        theme(text = element_text(size=20))
+
+```
+
+### GPP during Heat wave
+
+It is possible to change period, as there were several heatwaves - end of each summer month
+
+* '2019-06-21' '2019-06-30'
+* '2019-07-21' '2019-07-31'
+
+
+```{r plot_hh_selection}
+df_res %>%
+    filter(DateTime > '2019-07-21', DateTime <'2019-07-31') %>%
+    ggplot(aes(x=DateTime)) + 
+        geom_line(aes(y=-NEE, color='-NEE'), size=1.5) + 
+        geom_line(aes(y=GPP_U50_f), size=1.5) + 
+        geom_point(aes(y=GPP_U50_f, color=as.factor(GPP_U50_fqc))) + 
+        scale_x_datetime(date_breaks = "1 day", labels=scales::date_format('%d')) + 
+        guides(color=guide_legend(title="qc")) + 
+        labs(
+            title = 'NL-Spe GPP during heat wave',
+            x = 'July 2019'
+        ) + 
+        theme_bw() + 
+        theme(text = element_text(size=20))
+```
+## Making FLEX 2015 style
+
+```{r}
+df_joined %>%
+    filter(dtime > as.Date('2019-01-01 00:00:30', tz='UTC'), 
+           dtime <= as.Date('2020-01-01 00:00:00', tz='UTC')) 
+```
+
