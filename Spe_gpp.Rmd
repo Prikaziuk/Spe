@@ -377,7 +377,7 @@ df_res %>%
         geom_point(aes(y=GPP_U50_f)) + 
         geom_line(aes(y=GPP_ma, color=sprintf('GPP_ma%dd', ma_size)), size=1.5) +
         guides(color=guide_legend(title='color')) + 
-        scale_x_datetime(minor_breaks = "1 month") +
+        scale_x_date(minor_breaks = "1 month") +
         labs(
             title = 'NL-Spe DD GPP',
             x = 'date'
