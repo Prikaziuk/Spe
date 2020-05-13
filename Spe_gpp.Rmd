@@ -37,18 +37,9 @@ params:
 # install.packages('tsibble')
 # install.packages('lubridate')
 
-required_packages <- c('knitr', 'REddyProc', 'tidyverse', 'versions', 'lubridate', 'glue', 'digest')
+required_packages <- c('knitr', 'REddyProc', 'tidyverse', 'tsibble', 'lubridate')
 to_install <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
 if(length(to_install)) install.packages(to_install)
-
-if ('tsibble' %in% installed.packages()[,"Package"]) {
-  if (packageVersion("tsibble") != '0.8.3') {
-    warning('probably downgrading tsibble package')
-    versions::install.versions('tsibble', '0.8.3')
-  }
-} else {
-  versions::install.versions('tsibble', '0.8.3')
-}
 
 
 knitr::opts_chunk$set(echo=TRUE, include = TRUE, warning=FALSE, message=FALSE)
@@ -158,7 +149,7 @@ Demonstration of aggregation to daily timestamp
 ```{r dd}
 
 df_dd <- df_ts %>%
-    index_by(day = lubridate::floor_date(dtime, "day")) %>%  # round() and ceil() also exist
+    index_by(day = date(lubridate::floor_date(dtime, "day"))) %>%  # round() and ceil() also exist
     summarise_all(mean, na.rm=TRUE)
 
 df_dd %>%
@@ -371,7 +362,7 @@ df_res <- bind_cols(df_e, Spe$sExportResults())  # bind_cols(Spe$sDATA, Spe$sExp
 ma_size = 8
 
 df_res %>%
-    index_by(day = lubridate::floor_date(DateTime, "day")) %>%
+    index_by(day = date(lubridate::floor_date(DateTime, "day"))) %>%
     summarize(
         NEE = mean(NEE, na.rm=TRUE),
         GPP_U50_f = mean(GPP_U50_f, na.rm=TRUE)
