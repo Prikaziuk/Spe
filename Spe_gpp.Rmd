@@ -13,11 +13,11 @@ output:
     df_print: paged
     toc: yes
     
-abstract: |
-  This is the abstract.
+abstract: | 
+  This code was created for educational puproses: it shows how the eddy covariance data should be prepared for flux partitioning (separation of the net ecosystem exchage (NEE) to gross primary productivity (GPP) and ecosystem respiration (Reco)) and the flux partitioning itself with the [REddyProc R package](https://www.bgc-jena.mpg.de/bgi/index.php/Services/REddyProcWebRPackage) [(Wutzler et al., 2018)](https://doi.org/10.5194/bg-15-5015-2018).
+  
+  .
 
-  It consists of two paragraphs.
-    
 params:
   fluxes_path: 'W:\\Siteswrs\\Speuld\\data\\2_processed\\fluxes'
   flux_computed: 'Spe_2019_2020.rds'
@@ -25,6 +25,9 @@ params:
   rad_computed: 'Spe_2019_2020_rad_hh.rds'
   year: 2020
 ---
+<center>
+![](itc_ut.png){#id .class width=50% height=50%}
+</center>
 
 ```{r setup, include = FALSE}
 
@@ -33,6 +36,10 @@ params:
 # install.packages('tidyverse')
 # install.packages('tsibble')
 # install.packages('lubridate')
+
+required_packages <- c('knitr', 'REddyProc', 'tidyverse', 'tsibble', 'lubridate')
+to_install <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(to_install)) install.packages(to_install)
 
 
 knitr::opts_chunk$set(echo=TRUE, include = TRUE, warning=FALSE, message=FALSE)
@@ -218,6 +225,11 @@ rad_hh %>%
 ```
 
 # REddyProc
+
+The code below is the modified version of the official vignette https://cran.r-project.org/web/packages/REddyProc/vignettes/useCase.html
+
+
+Details are available at https://www.bgc-jena.mpg.de/bgi/index.php/Services/REddyProcWeb.
 
 ## Joining for REddyProc
 
