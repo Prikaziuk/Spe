@@ -37,9 +37,11 @@ params:
 # install.packages('tsibble')
 # install.packages('lubridate')
 
-required_packages <- c('knitr', 'REddyProc', 'tidyverse', 'tsibble', 'lubridate')
+required_packages <- c('knitr', 'REddyProc', 'tidyverse', 'versions', 'lubridate', 'glue', 'digest')
 to_install <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
 if(length(to_install)) install.packages(to_install)
+
+versions::install.versions('tsibble', '0.8.3')
 
 
 knitr::opts_chunk$set(echo=TRUE, include = TRUE, warning=FALSE, message=FALSE)
@@ -137,7 +139,7 @@ Non-reporting alternative of the code above:
 df_ts <- df %>%
   filter(!duplicated(dtime)) %>%
   as_tsibble(index = dtime) %>%  # add regular=FALSE if fails
-  fill_gaps(df_ts)
+  fill_gaps()
 ```
 
 
